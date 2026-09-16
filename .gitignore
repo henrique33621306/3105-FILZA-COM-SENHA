@@ -1,0 +1,10 @@
+.theos/
+.DS_Store
+Build/
+packages/
+MCMIdentifiers.plist
+*.deb
+*.ipa
+!base-unsigned.ipa
+*.ips
+*.log

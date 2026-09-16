@@ -1,0 +1,79 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build 3105 unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Validate IPA base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f base-unsigned.ipa || {
+            echo "::error file=base-unsigned.ipa::Adicione base-unsigned.ipa na raiz do repositorio."
+            exit 1
+          }
+          unzip -tq base-unsigned.ipa
+          unzip -Z1 base-unsigned.ipa | grep -Eq '^Payload/[^/]+\.app/Info\.plist$' || {
+            echo "::error file=base-unsigned.ipa::A IPA nao possui Payload/*.app/Info.plist."
+            exit 1
+          }
+
+      - name: Install Theos dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ldid xz
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
+
+      - name: Compile tweak and assemble IPA
+        shell: zsh {0}
+        env:
+          THEOS: ${{ runner.temp }}/theos
+          FILZASLOP_VERSION: 1.2.0-ci.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build_release_ipa.sh
+          scripts/build_release_ipa.sh \
+            base-unsigned.ipa \
+            3105-unsigned.ipa
+
+      - name: Validate result
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s 3105-unsigned.ipa
+          unzip -tq 3105-unsigned.ipa
+          shasum -a 256 3105-unsigned.ipa | tee 3105-unsigned.ipa.sha256
+
+      - name: Publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3105-unsigned-ipa
+          path: |
+            3105-unsigned.ipa
+            3105-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
